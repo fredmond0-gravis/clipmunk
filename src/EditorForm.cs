@@ -131,6 +131,7 @@ namespace Clipmunk
             var libraryButton = GlyphButton("library", "Library (Ctrl+L)", (s, e) => TrayContext.ShowLibrary());
             libraryButton.Alignment = ToolStripItemAlignment.Right;
             toolBar.Items.Add(copyButton);
+            toolBar.Items.Add(BuildAskClaudeButton());
             toolBar.Items.Add(moreButton);
             toolBar.Items.Add(libraryButton);
 
@@ -395,6 +396,40 @@ namespace Clipmunk
             }
         }
 
+        private ToolStripSplitButton BuildAskClaudeButton()
+        {
+            var button = new ToolStripSplitButton(" Ask Claude", Art.Glyph("claude", icon), (s, e) => AskClaude())
+            {
+                Alignment = ToolStripItemAlignment.Right,
+                ToolTipText = "Start a new Claude chat with this screenshot (Ctrl+Shift+C)",
+                Font = Theme.UiFont(9f, FontStyle.Bold),
+                Margin = new Padding(Theme.S(4), 0, 0, 0)
+            };
+            Theme.Apply(button.DropDown);
+            var appItem = new ToolStripMenuItem("Open in the Claude app") { Enabled = ClaudeHandoff.AppInstalled };
+            var webItem = new ToolStripMenuItem("Open claude.ai in the browser");
+            var pasteItem = new ToolStripMenuItem("Paste the screenshot automatically") { CheckOnClick = true, Checked = Settings.Current.ClaudeAutoPaste };
+            Action sync = () =>
+            {
+                bool app = ClaudeHandoff.EffectiveTarget == ClaudeHandoff.AppTarget;
+                appItem.Checked = app;
+                webItem.Checked = !app;
+            };
+            appItem.Click += (s, e) => { Settings.Current.ClaudeTarget = ClaudeHandoff.AppTarget; Settings.Current.Save(); sync(); };
+            webItem.Click += (s, e) => { Settings.Current.ClaudeTarget = ClaudeHandoff.BrowserTarget; Settings.Current.Save(); sync(); };
+            pasteItem.CheckedChanged += (s, e) => { Settings.Current.ClaudeAutoPaste = pasteItem.Checked; Settings.Current.Save(); };
+            button.DropDownItems.AddRange(new ToolStripItem[] { appItem, webItem, new ToolStripSeparator(), pasteItem });
+            sync();
+            return button;
+        }
+
+        private void AskClaude()
+        {
+            canvas.CommitTextEdit();
+            SaveNow();
+            using (var flat = canvas.Flatten()) ShowMessage(ClaudeHandoff.Send(flat, this));
+        }
+
         private void CopyFile()
         {
             canvas.CommitTextEdit();
@@ -451,6 +486,7 @@ namespace Clipmunk
                 case Keys.Control | Keys.Y:
                 case Keys.Control | Keys.Shift | Keys.Z: canvas.Redo(); return true;
                 case Keys.Control | Keys.C: CopyToClipboard(true); return true;
+                case Keys.Control | Keys.Shift | Keys.C: AskClaude(); return true;
                 case Keys.Control | Keys.V: Paste(); return true;
                 case Keys.Control | Keys.S: SaveNow(); ShowMessage("Saved to library"); return true;
                 case Keys.Control | Keys.Shift | Keys.S: ExportAs(); return true;

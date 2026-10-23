@@ -338,6 +338,16 @@ namespace Clipmunk
                         using (var p = new Pen(inkColor, 1.5f) { LineJoin = LineJoin.Round })
                             g.DrawPolygon(p, new[] { P(2.5f, 4.5f), P(8, 4.5f), P(10, 6.5f), P(17.5f, 6.5f), P(17.5f, 16), P(2.5f, 16) });
                         break;
+                    case "claude":
+                    {
+                        // Two four-point sparkles
+                        using (var b = new SolidBrush(Color.FromArgb(232, 128, 90)))
+                        {
+                            g.FillPolygon(b, Sparkle(8.5f, 11, 7.5f, 1.6f));
+                            g.FillPolygon(b, Sparkle(15.5f, 4.5f, 3.6f, 0.9f));
+                        }
+                        break;
+                    }
                     case "bold":
                         using (var path = CenteredText("B", 14, P(10, 10.2f), true)) g.FillPath(inkBrush, path);
                         break;
@@ -360,6 +370,15 @@ namespace Clipmunk
                     }
                 }
             }
+        }
+
+        private static PointF[] Sparkle(float cx, float cy, float r, float waist)
+        {
+            return new[]
+            {
+                P(cx, cy - r), P(cx + waist, cy - waist), P(cx + r, cy), P(cx + waist, cy + waist),
+                P(cx, cy + r), P(cx - waist, cy + waist), P(cx - r, cy), P(cx - waist, cy - waist)
+            };
         }
 
         public static GraphicsPath CenteredText(string text, float emSize, PointF center, bool bold)
@@ -460,7 +479,7 @@ namespace Clipmunk
 
         public static void WritePreviewSheet(string path)
         {
-            string[] glyphs = { "select", "pen", "highlighter", "arrow", "line", "rect", "ellipse", "text", "step", "sticker", "blur", "crop", "capture", "undo", "redo", "copy", "save", "library", "folder", "bold", "search", "drive" };
+            string[] glyphs = { "select", "pen", "highlighter", "arrow", "line", "rect", "ellipse", "text", "step", "sticker", "blur", "crop", "capture", "undo", "redo", "copy", "save", "library", "folder", "bold", "search", "drive", "claude" };
             using (var bmp = new Bitmap(1200, 560))
             using (var g = Graphics.FromImage(bmp))
             {

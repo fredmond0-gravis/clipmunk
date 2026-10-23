@@ -21,6 +21,8 @@ namespace Clipmunk
         public Tool LastTool = Tool.Arrow;
         public string LibraryFolder = "";
         public bool OpenEditorAfterCapture = true;
+        public string ClaudeTarget = "";   // "app", "browser", or "" = app when installed
+        public bool ClaudeAutoPaste = true;
 
         private static Settings current;
         public static Settings Current
@@ -68,6 +70,8 @@ namespace Clipmunk
                             case "AutoCopy": s.AutoCopy = v == "1"; break;
                             case "OpenEditor": s.OpenEditorAfterCapture = v == "1"; break;
                             case "LibraryFolder": s.LibraryFolder = v; break;
+                            case "ClaudeTarget": s.ClaudeTarget = v; break;
+                            case "ClaudeAutoPaste": s.ClaudeAutoPaste = v == "1"; break;
                             case "Sticker": { StickerKind sk; if (Enum.TryParse(v, out sk)) s.Sticker = sk; break; }
                             case "LastTool": { Tool t; if (Enum.TryParse(v, out t)) s.LastTool = t; break; }
                         }
@@ -103,7 +107,9 @@ namespace Clipmunk
                     "OpenEditor=" + (OpenEditorAfterCapture ? "1" : "0"),
                     "Sticker=" + Sticker,
                     "LastTool=" + LastTool,
-                    "LibraryFolder=" + LibraryFolder
+                    "LibraryFolder=" + LibraryFolder,
+                    "ClaudeTarget=" + ClaudeTarget,
+                    "ClaudeAutoPaste=" + (ClaudeAutoPaste ? "1" : "0")
                 });
             }
             catch (Exception)

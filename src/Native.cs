@@ -107,7 +107,24 @@ namespace Clipmunk
         [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr pid);
         [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int max);
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+        [DllImport("user32.dll")]
         public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+        /// <summary>Types Ctrl+V into whatever window has focus.</summary>
+        public static void SendCtrlV()
+        {
+            const byte VK_CONTROL = 0x11, VK_V = 0x56;
+            const uint KEYUP = 0x2;
+            keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+            keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+            keybd_event(VK_V, 0, KEYUP, UIntPtr.Zero);
+            keybd_event(VK_CONTROL, 0, KEYUP, UIntPtr.Zero);
+        }
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")]

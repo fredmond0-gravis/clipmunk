@@ -406,6 +406,14 @@ namespace Clipmunk
             }
         }
 
+        /// <summary>Esc: put the current version on the clipboard and close (closing saves it to the library).</summary>
+        private void CopyAndClose()
+        {
+            canvas.CommitTextEdit();
+            using (var flat = canvas.Flatten()) ClipboardHelper.CopyImage(flat);
+            Close();
+        }
+
         private ToolStripSplitButton BuildAskClaudeButton()
         {
             var button = new ToolStripSplitButton(" Ask Claude", Art.Glyph("claude", icon), (s, e) => AskClaude())
@@ -515,7 +523,10 @@ namespace Clipmunk
                 case Keys.Control | Keys.Subtract: canvas.ZoomStep(-1, null); return true;
                 case Keys.Delete:
                 case Keys.Back: if (canvas.DeleteSelected()) return true; break;
-                case Keys.Escape: canvas.Escape(); return true;
+                case Keys.Escape:
+                    if (canvas.IsDragging) canvas.Escape(); // first cancel a drag in progress
+                    else CopyAndClose();
+                    return true;
                 case Keys.Left: if (canvas.Nudge(-1, 0)) return true; break;
                 case Keys.Right: if (canvas.Nudge(1, 0)) return true; break;
                 case Keys.Up: if (canvas.Nudge(0, -1)) return true; break;

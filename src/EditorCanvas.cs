@@ -144,6 +144,7 @@ namespace Clipmunk
         public bool CanUndo { get { return undo.Count > 0; } }
         public bool CanRedo { get { return redo.Count > 0; } }
         public bool IsEditingText { get { return editing != null; } }
+        public bool IsDragging { get { return drag != DragMode.None; } }
 
         public Tool Tool
         {

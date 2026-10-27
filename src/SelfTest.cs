@@ -36,6 +36,7 @@ namespace Clipmunk
             Step("roundtrip", () => RoundTrip(), ref failures);
             Step("editor", () => RenderEditor(Path.Combine(dir, "editor.png"), Path.Combine(dir, "flat.png")), ref failures);
             Step("library", () => RenderLibrary(Path.Combine(dir, "library.png")), ref failures);
+            Step("updater", () => UpdaterParsing(), ref failures);
 
             log.AppendLine(failures == 0 ? "ALL PASSED" : failures + " FAILED");
             File.WriteAllText(Path.Combine(dir, "results.txt"), log.ToString());
@@ -289,6 +290,25 @@ namespace Clipmunk
                 }
                 lib.Close();
             }
+        }
+
+        private static void UpdaterParsing()
+        {
+            var cur = new Version(1, 2, 0, 0);
+            Func<string, bool, string> release = (tag, pre) =>
+                "{\"tag_name\":\"" + tag + "\",\"draft\":false,\"prerelease\":" + (pre ? "true" : "false") +
+                ",\"html_url\":\"https://example.test/r\",\"assets\":[{\"name\":\"notes.txt\",\"browser_download_url\":\"https://example.test/n\"}," +
+                "{\"name\":\"Clipmunk.zip\",\"browser_download_url\":\"https://example.test/Clipmunk.zip\",\"digest\":\"sha256:ABCDEF\"}]}";
+            var u = Updater.Parse(release("v1.3.0", false), cur);
+            Check(u != null && u.Version == new Version(1, 3, 0, 0), "newer tag detected");
+            Check(u.ZipUrl == "https://example.test/Clipmunk.zip" && u.Sha256 == "abcdef", "asset url and digest");
+            Check(Updater.Parse(release("v1.2.0", false), cur) == null, "same version is not an update");
+            Check(Updater.Parse(release("v1.1.9", false), cur) == null, "older version is not an update");
+            Check(Updater.Parse(release("v2.0.0", true), cur) == null, "prereleases are skipped");
+            Version v;
+            Check(Updater.TryParseTag("v1.10", out v) && v == new Version(1, 10, 0, 0) && v > new Version(1, 9, 0, 0), "1.10 > 1.9");
+            Check(Updater.TryParseTag("1.2.0.0", out v) && v == cur, "file version parses");
+            Check(!Updater.TryParseTag("latest", out v), "garbage tag rejected");
         }
 
         private static void Pump(int ms)

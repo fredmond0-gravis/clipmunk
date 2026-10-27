@@ -7,15 +7,21 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Clipmunk")]
 [assembly: AssemblyDescription("Clipmunk screenshot & annotation tool")]
 [assembly: AssemblyProduct("Clipmunk")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace Clipmunk
 {
     internal static class Program
     {
-        public const string Version = "1.2";
+        public const string Version = "1.3";
         public const string CaptureEventName = @"Local\Clipmunk.Capture";
+
+        /// <summary>This process was started by the updater.</summary>
+        public static bool JustUpdated;
+
+        /// <summary>"--update-now": check GitHub and install any newer release without asking.</summary>
+        public static bool UpdateNow;
 
         /// <summary>Set CLIPMUNK_DEBUG=1 to log to %APPDATA%\Clipmunk\debug.log.</summary>
         public static readonly bool Debug = Environment.GetEnvironmentVariable("CLIPMUNK_DEBUG") == "1";
@@ -48,6 +54,19 @@ namespace Clipmunk
             }
 
             bool captureNow = args.Length == 1 && args[0] == "--capture";
+            UpdateNow = args.Length == 1 && args[0] == "--update-now";
+            int oldPid;
+            if (args.Length == 2 && args[0] == "--after-update" && int.TryParse(args[1], out oldPid))
+            {
+                // Started by the updater: let the old copy exit (and release the mutex) first.
+                Updater.FinishUpdate(oldPid);
+                JustUpdated = true;
+            }
+            else
+            {
+                Updater.CleanupOld();
+            }
+
             bool createdNew;
             using (var mutex = new Mutex(true, @"Local\Clipmunk.SingleInstance", out createdNew))
             {

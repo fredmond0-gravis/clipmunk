@@ -29,6 +29,16 @@ Clipmunk needs only what ships with Windows 10/11 (.NET Framework 4.8). There is
 
 > If Print Screen still opens the Snipping Tool, turn off *Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture"*.
 
+### Updates
+
+From version 1.3 on, Clipmunk updates itself. It checks this repo's latest GitHub release shortly after it starts, then every 6 hours. When there's a newer version, a notification appears and **Update to Clipmunk x.y** shows at the top of the tray menu. One click downloads it, verifies its SHA-256 checksum, swaps the exe in place and restarts. Open editors are saved first.
+
+- **Check for updates…** in the tray menu checks right away.
+- Untick **Check for updates automatically** to turn the background check off.
+- `Clipmunk.exe --update-now` installs the latest release without asking, which is handy for scripted rollouts.
+
+Copies older than 1.3 have no updater, so install 1.3 once by hand.
+
 ## Keyboard shortcuts (editor)
 
 | Key | Action | Key | Action |
@@ -71,11 +81,13 @@ Every push to `main` is built by GitHub Actions; the zip is attached to the work
 To publish a release colleagues can download, bump `Version` in `src/Program.cs` (and the assembly versions), then:
 
 ```
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.4.0
+git push origin v1.4.0
 ```
 
-The workflow builds it and creates a GitHub Release with `Clipmunk.zip` attached. Colleagues re-run **Install Clipmunk.cmd** to update; it replaces the running copy.
+The workflow builds it and creates a GitHub Release with `Clipmunk.zip` attached. Within a few hours every running Clipmunk offers the update. The tag must match the exe's version: the updater refuses a download whose version differs from the release tag.
+
+To test the updater without publishing, set `CLIPMUNK_UPDATE_FEED` to the URL of a release JSON (a `file:///` URL works). Clipmunk will read that instead of GitHub.
 
 ### Self-test
 
@@ -91,6 +103,8 @@ The workflow builds it and creates a GitHub Release with `Clipmunk.zip` attached
 | `src/Shapes.cs` | Editable annotation objects and their save format |
 | `src/LibraryForm.cs` | Library grid (thumbnails, search, drag-out, delete) |
 | `src/Storage.cs` | Settings, Google Drive detection, documents, clipboard |
+| `src/Updater.cs` | Self-update from GitHub Releases |
+| `src/ClaudeHandoff.cs` | "Ask Claude" — new Claude chat with the screenshot |
 | `src/Theme.cs`, `src/Art.cs`, `src/Stickers.cs` | Dark theme, vector icons, stickers, app icon |
 
 ## License

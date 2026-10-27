@@ -23,6 +23,7 @@ namespace Clipmunk
         public bool OpenEditorAfterCapture = true;
         public string ClaudeTarget = "";   // "app", "browser", or "" = app when installed
         public bool ClaudeAutoPaste = true;
+        public bool AutoUpdate = true;
         public bool WinShiftS = true;
         public CaptureMode CaptureMode = CaptureMode.Rectangle;
 
@@ -74,6 +75,7 @@ namespace Clipmunk
                             case "LibraryFolder": s.LibraryFolder = v; break;
                             case "ClaudeTarget": s.ClaudeTarget = v; break;
                             case "ClaudeAutoPaste": s.ClaudeAutoPaste = v == "1"; break;
+                            case "AutoUpdate": s.AutoUpdate = v == "1"; break;
                             case "WinShiftS": s.WinShiftS = v == "1"; break;
                             case "CaptureMode": { CaptureMode cm; if (Enum.TryParse(v, out cm)) s.CaptureMode = cm; break; }
                             case "Sticker": { StickerKind sk; if (Enum.TryParse(v, out sk)) s.Sticker = sk; break; }
@@ -114,6 +116,7 @@ namespace Clipmunk
                     "LibraryFolder=" + LibraryFolder,
                     "ClaudeTarget=" + ClaudeTarget,
                     "ClaudeAutoPaste=" + (ClaudeAutoPaste ? "1" : "0"),
+                    "AutoUpdate=" + (AutoUpdate ? "1" : "0"),
                     "WinShiftS=" + (WinShiftS ? "1" : "0"),
                     "CaptureMode=" + CaptureMode
                 });

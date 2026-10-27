@@ -7,14 +7,14 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Clipmunk")]
 [assembly: AssemblyDescription("Clipmunk screenshot & annotation tool")]
 [assembly: AssemblyProduct("Clipmunk")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.3.1.0")]
+[assembly: AssemblyFileVersion("1.3.1.0")]
 
 namespace Clipmunk
 {
     internal static class Program
     {
-        public const string Version = "1.3";
+        public const string Version = "1.3.1";
         public const string CaptureEventName = @"Local\Clipmunk.Capture";
 
         /// <summary>This process was started by the updater.</summary>

@@ -26,9 +26,11 @@ namespace Clipmunk
             Directory.CreateDirectory(lib);
             Settings.ReadOnly = true;
             Settings.Current.LibraryFolder = lib;
+            Settings.Current.CaptureMode = CaptureMode.Rectangle;
 
             Step("art", () => Art.WritePreviewSheet(Path.Combine(dir, "art.png")), ref failures);
             Step("overlay", () => RenderOverlay(Path.Combine(dir, "overlay.png")), ref failures);
+            Step("freeform", () => Freeform(Path.Combine(dir, "freeform.png")), ref failures);
             Step("roundtrip", () => RoundTrip(), ref failures);
             Step("editor", () => RenderEditor(Path.Combine(dir, "editor.png"), Path.Combine(dir, "flat.png")), ref failures);
             Step("library", () => RenderLibrary(Path.Combine(dir, "library.png")), ref failures);
@@ -96,6 +98,26 @@ namespace Clipmunk
                 var sel = new Rectangle(vs.Width / 4, vs.Height / 4, vs.Width / 3, vs.Height / 3);
                 ov.RenderPreview(target, new Point(sel.Right - 1, sel.Bottom - 1), sel);
                 target.Save(path, ImageFormat.Png);
+            }
+        }
+
+        private static void Freeform(string path)
+        {
+            var vs = Screen.PrimaryScreen.Bounds;
+            using (var shot = FakeDesktop(vs.Width, vs.Height))
+            using (var ov = new CaptureOverlay(shot, vs, new List<Rectangle>()))
+            {
+                var tri = new List<Point> { new Point(200, 100), new Point(500, 400), new Point(100, 400) };
+                using (var cut = ov.FreeformForTest(tri))
+                {
+                    Check(cut != null, "freeform result");
+                    Check(cut.PixelFormat == PixelFormat.Format32bppArgb, "freeform has alpha");
+                    Check(cut.Width == 401 && cut.Height == 301, "freeform size " + cut.Width + "x" + cut.Height);
+                    Check(cut.GetPixel(2, 2).A == 0, "outside is transparent");
+                    Check(cut.GetPixel(200, 250).A == 255, "inside is opaque");
+                    Check(cut.GetPixel(200, 250).ToArgb() == shot.GetPixel(300, 350).ToArgb(), "inside matches the screen");
+                    cut.Save(path, ImageFormat.Png);
+                }
             }
         }
 

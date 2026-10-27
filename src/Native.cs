@@ -18,6 +18,9 @@ namespace Clipmunk
         public const int VK_MENU = 0x12;
         public const int VK_LWIN = 0x5B;
         public const int VK_RWIN = 0x5C;
+        public const int VK_SHIFT = 0x10;
+        public const int VK_CONTROL = 0x11;
+        public const int VK_S = 0x53;
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_TRANSPARENT = 0x20;
         public const int WS_EX_TOOLWINDOW = 0x80;

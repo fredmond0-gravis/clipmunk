@@ -14,15 +14,17 @@ namespace Clipmunk
     /// <summary>
     /// Low-level keyboard hook that swallows the Print Screen key. It runs on its own thread so a busy
     /// UI thread can never make Windows drop the hook. Alt+PrtScn and Win+PrtScn pass through.
+    /// Win+Shift+S is taken over too (instead of the Snipping Tool) unless turned off in the settings.
     /// </summary>
     internal sealed class PrintScreenHook : IDisposable
     {
+        private const byte VK_DUMMY = 0xE8; // unassigned; tapped so releasing Win doesn't open Start
         private readonly Action onPress;
         private Native.LowLevelKeyboardProc proc;
         private IntPtr hook;
         private Thread thread;
         private uint threadId;
-        private bool keyDown;
+        private bool keyDown, sKeyDown;
 
         public PrintScreenHook(Action onPress)
         {
@@ -79,6 +81,31 @@ namespace Clipmunk
                         return (IntPtr)1;
                     }
                 }
+                else if (k.vkCode == Native.VK_S && (sKeyDown || Settings.Current.WinShiftS))
+                {
+                    int msg = wParam.ToInt32();
+                    bool down = msg == Native.WM_KEYDOWN || msg == Native.WM_SYSKEYDOWN;
+                    if (!down && sKeyDown)
+                    {
+                        sKeyDown = false;
+                        return (IntPtr)1;
+                    }
+                    bool win = (Native.GetAsyncKeyState(Native.VK_LWIN) & 0x8000) != 0 || (Native.GetAsyncKeyState(Native.VK_RWIN) & 0x8000) != 0;
+                    bool shift = (Native.GetAsyncKeyState(Native.VK_SHIFT) & 0x8000) != 0;
+                    bool ctrl = (Native.GetAsyncKeyState(Native.VK_CONTROL) & 0x8000) != 0;
+                    bool alt = (Native.GetAsyncKeyState(Native.VK_MENU) & 0x8000) != 0;
+                    if (down && win && shift && !ctrl && !alt)
+                    {
+                        if (!sKeyDown)
+                        {
+                            Native.keybd_event(VK_DUMMY, 0, 0, UIntPtr.Zero);
+                            Native.keybd_event(VK_DUMMY, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero);
+                            onPress();
+                        }
+                        sKeyDown = true;
+                        return (IntPtr)1;
+                    }
+                }
             }
             return Native.CallNextHookEx(hook, nCode, wParam, lParam);
         }
@@ -127,12 +154,18 @@ namespace Clipmunk
         }
     }
 
+    internal enum CaptureMode { Rectangle, Freeform, Window, FullScreen }
+
     /// <summary>
     /// Full-screen frozen overlay. Drag to select, click to grab the window under the cursor, arrows nudge
     /// one pixel, Esc/right-click cancels. A magnifier shows the exact pixel under the crosshair.
+    /// A toolbar (or keys 1–4) switches between rectangle, freeform, window and full-screen capture.
     /// </summary>
     internal sealed class CaptureOverlay : Form
     {
+        private static readonly string[] ModeLabels = { "Rectangle", "Freeform", "Window", "Full screen" };
+        private CaptureMode mode;
+        private readonly List<Point> path = new List<Point>();
         private readonly Bitmap shot;
         private readonly Rectangle vs;
         private readonly List<Rectangle> windows = new List<Rectangle>();
@@ -180,6 +213,7 @@ namespace Clipmunk
             smallFont = new Font("Segoe UI", 11.5f * s, FontStyle.Regular, GraphicsUnit.Pixel);
 
             PrepareSurfaces();
+            mode = Settings.Current.CaptureMode;
             cursor = new Point(Cursor.Position.X - vs.X, Cursor.Position.Y - vs.Y);
             hover = FindHover(cursor);
         }
@@ -230,7 +264,27 @@ namespace Clipmunk
 
         // ------------------------------------------------------------------ input
 
-        private Rectangle ActiveRect { get { return dragging && moved ? selection : hover; } }
+        private Rectangle ActiveRect
+        {
+            get
+            {
+                if (mode == CaptureMode.Freeform) return Rectangle.Empty;
+                return dragging && moved ? selection : hover;
+            }
+        }
+
+        private void SetMode(CaptureMode m)
+        {
+            mode = m;
+            Settings.Current.CaptureMode = m;
+            Settings.Current.Save();
+            dragging = false;
+            moved = false;
+            path.Clear();
+            hover = FindHover(cursor);
+            lastOverlay = OverlayRects();
+            Invalidate();
+        }
 
         private Rectangle MonitorAt(Point clientPt)
         {
@@ -241,9 +295,11 @@ namespace Clipmunk
 
         private Rectangle FindHover(Point p)
         {
+            if (mode == CaptureMode.Freeform) return Rectangle.Empty;
+            if (mode == CaptureMode.FullScreen) return MonitorAt(p);
             foreach (var w in windows)
                 if (w.Contains(p)) return w;
-            return MonitorAt(p);
+            return mode == CaptureMode.Window ? Rectangle.Empty : MonitorAt(p);
         }
 
         private Rectangle FromCorners(Point a, Point b)
@@ -257,10 +313,18 @@ namespace Clipmunk
         {
             if (e.Button == MouseButtons.Left)
             {
+                int seg = ToolbarHit(e.Location);
+                if (seg >= 0)
+                {
+                    SetMode((CaptureMode)seg);
+                    return;
+                }
                 dragging = true;
                 moved = false;
                 dragStart = e.Location;
                 selection = Rectangle.Empty;
+                path.Clear();
+                if (mode == CaptureMode.Freeform) path.Add(e.Location);
             }
             else if (e.Button == MouseButtons.Right)
             {
@@ -269,6 +333,7 @@ namespace Clipmunk
                     dragging = false;
                     moved = false;
                     UpdateOverlay();
+                    path.Clear();
                 }
                 else
                 {
@@ -280,10 +345,14 @@ namespace Clipmunk
         protected override void OnMouseMove(MouseEventArgs e)
         {
             cursor = e.Location;
-            if (dragging)
+            if (dragging && (mode == CaptureMode.Rectangle || mode == CaptureMode.Freeform))
             {
                 if (!moved && (Math.Abs(e.X - dragStart.X) > 3 || Math.Abs(e.Y - dragStart.Y) > 3)) moved = true;
-                if (moved) selection = FromCorners(dragStart, cursor);
+                if (mode == CaptureMode.Freeform)
+                {
+                    if (path[path.Count - 1] != cursor) path.Add(cursor);
+                }
+                else if (moved) selection = FromCorners(dragStart, cursor);
             }
             else
             {
@@ -296,6 +365,20 @@ namespace Clipmunk
         {
             if (e.Button != MouseButtons.Left || !dragging) return;
             dragging = false;
+            if (mode == CaptureMode.Freeform)
+            {
+                var cut = moved ? CutFreeform(path) : null;
+                path.Clear();
+                if (cut == null)
+                {
+                    UpdateOverlay();
+                    return;
+                }
+                Result = cut;
+                DialogResult = DialogResult.OK;
+                return;
+            }
+            if (mode == CaptureMode.Window && hover.IsEmpty) return; // clicked the desktop: keep waiting
             Finish(moved ? selection : hover);
         }
 
@@ -308,8 +391,12 @@ namespace Clipmunk
                     DialogResult = DialogResult.Cancel;
                     break;
                 case Keys.Enter:
-                    Finish(ActiveRect);
+                    if (!ActiveRect.IsEmpty) Finish(ActiveRect);
                     break;
+                case Keys.D1: case Keys.NumPad1: SetMode(CaptureMode.Rectangle); break;
+                case Keys.D2: case Keys.NumPad2: SetMode(CaptureMode.Freeform); break;
+                case Keys.D3: case Keys.NumPad3: SetMode(CaptureMode.Window); break;
+                case Keys.D4: case Keys.NumPad4: SetMode(CaptureMode.FullScreen); break;
                 case Keys.Left: Nudge(-step, 0); break;
                 case Keys.Right: Nudge(step, 0); break;
                 case Keys.Up: Nudge(0, -step); break;
@@ -334,6 +421,34 @@ namespace Clipmunk
             Result.SetResolution(96, 96);
             DialogResult = DialogResult.OK;
         }
+
+        /// <summary>Cuts the closed freehand path out of the frame; outside the path stays transparent.</summary>
+        private Bitmap CutFreeform(List<Point> pts)
+        {
+            if (pts.Count < 3) return null;
+            using (var gp = new GraphicsPath())
+            {
+                gp.AddLines(pts.ToArray());
+                gp.CloseFigure();
+                var b = Rectangle.Ceiling(gp.GetBounds());
+                b.Width++;
+                b.Height++;
+                b.Intersect(new Rectangle(Point.Empty, vs.Size));
+                if (b.Width < 3 || b.Height < 3) return null;
+                var bmp = new Bitmap(b.Width, b.Height, PixelFormat.Format32bppArgb);
+                bmp.SetResolution(96, 96);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.Clear(Color.Transparent);
+                    g.TranslateTransform(-b.X, -b.Y);
+                    g.SetClip(gp);
+                    g.DrawImage(shot, b, b, GraphicsUnit.Pixel);
+                }
+                return bmp;
+            }
+        }
+
+        public Bitmap FreeformForTest(List<Point> pts) { return CutFreeform(pts); }
 
         // ------------------------------------------------------------------ painting
 
@@ -362,12 +477,22 @@ namespace Clipmunk
                 lr.Inflate(2, 2);
                 l.Add(lr);
             }
+            if (path.Count > 1)
+            {
+                var pb = PathBounds();
+                pb.Inflate(4, 4);
+                l.Add(pb);
+            }
             var m = MagnifierBounds();
             m.Inflate(4, 4);
             l.Add(m);
             var h = HintRect();
             h.Inflate(2, 2);
             l.Add(h);
+            Rectangle[] segs;
+            var t = ToolbarRect(out segs);
+            t.Inflate(2, 2);
+            l.Add(t);
             return l;
         }
 
@@ -457,15 +582,90 @@ namespace Clipmunk
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
 
+            if (path.Count > 1)
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var p = new Pen(Theme.Accent, Math.Max(2f, 2 * s))) g.DrawLines(p, path.ToArray());
+                g.SmoothingMode = SmoothingMode.None;
+            }
+
             DrawMagnifier(g, s);
 
             var hr = HintRect();
             Pill(g, hr, Color.FromArgb(225, 20, 21, 24));
             TextRenderer.DrawText(g, HintText, smallFont, hr, Color.FromArgb(225, 228, 233),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+            DrawToolbar(g, s);
         }
 
-        private const string HintText = "Drag to select   ·   Click a window   ·   Arrows nudge 1px   ·   Enter to grab   ·   Esc to cancel";
+        private string HintText
+        {
+            get
+            {
+                switch (mode)
+                {
+                    case CaptureMode.Freeform: return "Draw around the area   ·   1–4 switch mode   ·   Esc to cancel";
+                    case CaptureMode.Window: return "Click a window   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
+                    case CaptureMode.FullScreen: return "Click a screen   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
+                    default: return "Drag to select   ·   Click a window   ·   Arrows nudge 1px   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
+                }
+            }
+        }
+
+        private Rectangle PathBounds()
+        {
+            int l = int.MaxValue, t = int.MaxValue, r = int.MinValue, b = int.MinValue;
+            foreach (var p in path)
+            {
+                l = Math.Min(l, p.X); t = Math.Min(t, p.Y);
+                r = Math.Max(r, p.X); b = Math.Max(b, p.Y);
+            }
+            return Rectangle.FromLTRB(l, t, r + 1, b + 1);
+        }
+
+        /// <summary>Mode toolbar at the top of the monitor under the cursor; segs gets one rect per mode.</summary>
+        private Rectangle ToolbarRect(out Rectangle[] segs)
+        {
+            float s = UiScale;
+            var mon = MonitorAt(cursor);
+            int pad = (int)(4 * s), h = (int)(32 * s);
+            segs = new Rectangle[ModeLabels.Length];
+            int w = pad;
+            for (int i = 0; i < ModeLabels.Length; i++)
+            {
+                int sw = TextRenderer.MeasureText(ModeLabels[i], smallFont).Width + (int)(28 * s);
+                segs[i] = new Rectangle(w, pad, sw, h);
+                w += sw;
+            }
+            w += pad;
+            int x = mon.X + (mon.Width - w) / 2, y = mon.Y + (int)(20 * s);
+            for (int i = 0; i < segs.Length; i++) segs[i].Offset(x, y);
+            return new Rectangle(x, y, w, h + 2 * pad);
+        }
+
+        private int ToolbarHit(Point p)
+        {
+            Rectangle[] segs;
+            if (!ToolbarRect(out segs).Contains(p)) return -1;
+            for (int i = 0; i < segs.Length; i++)
+                if (segs[i].Contains(p)) return i;
+            return (int)mode; // the padding around the buttons: swallow the click
+        }
+
+        private void DrawToolbar(Graphics g, float s)
+        {
+            Rectangle[] segs;
+            var tr = ToolbarRect(out segs);
+            Pill(g, tr, Color.FromArgb(240, 20, 21, 24));
+            for (int i = 0; i < segs.Length; i++)
+            {
+                bool on = i == (int)mode;
+                if (on) Pill(g, segs[i], Theme.Accent);
+                TextRenderer.DrawText(g, ModeLabels[i], smallFont, segs[i], on ? Color.White : Color.FromArgb(200, 205, 212),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
+        }
 
         private static void Pill(Graphics g, Rectangle r, Color c)
         {
@@ -495,7 +695,9 @@ namespace Clipmunk
             var mon = MonitorAt(cursor);
             var sz = TextRenderer.MeasureText(HintText, smallFont);
             int w = sz.Width + (int)(32 * s), h = (int)(30 * s);
-            return new Rectangle(mon.X + (mon.Width - w) / 2, mon.Y + (int)(20 * s), w, h);
+            Rectangle[] segs;
+            int y = ToolbarRect(out segs).Bottom + (int)(8 * s);
+            return new Rectangle(mon.X + (mon.Width - w) / 2, y, w, h);
         }
 
         private const int Cells = 15;

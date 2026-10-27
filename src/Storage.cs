@@ -23,6 +23,8 @@ namespace Clipmunk
         public bool OpenEditorAfterCapture = true;
         public string ClaudeTarget = "";   // "app", "browser", or "" = app when installed
         public bool ClaudeAutoPaste = true;
+        public bool WinShiftS = true;
+        public CaptureMode CaptureMode = CaptureMode.Rectangle;
 
         private static Settings current;
         public static Settings Current
@@ -72,6 +74,8 @@ namespace Clipmunk
                             case "LibraryFolder": s.LibraryFolder = v; break;
                             case "ClaudeTarget": s.ClaudeTarget = v; break;
                             case "ClaudeAutoPaste": s.ClaudeAutoPaste = v == "1"; break;
+                            case "WinShiftS": s.WinShiftS = v == "1"; break;
+                            case "CaptureMode": { CaptureMode cm; if (Enum.TryParse(v, out cm)) s.CaptureMode = cm; break; }
                             case "Sticker": { StickerKind sk; if (Enum.TryParse(v, out sk)) s.Sticker = sk; break; }
                             case "LastTool": { Tool t; if (Enum.TryParse(v, out t)) s.LastTool = t; break; }
                         }
@@ -109,7 +113,9 @@ namespace Clipmunk
                     "LastTool=" + LastTool,
                     "LibraryFolder=" + LibraryFolder,
                     "ClaudeTarget=" + ClaudeTarget,
-                    "ClaudeAutoPaste=" + (ClaudeAutoPaste ? "1" : "0")
+                    "ClaudeAutoPaste=" + (ClaudeAutoPaste ? "1" : "0"),
+                    "WinShiftS=" + (WinShiftS ? "1" : "0"),
+                    "CaptureMode=" + CaptureMode
                 });
             }
             catch (Exception)
@@ -437,6 +443,21 @@ namespace Clipmunk
         public static void Save(Image img, string path)
         {
             string ext = Path.GetExtension(path).ToLowerInvariant();
+            if ((ext == ".jpg" || ext == ".jpeg" || ext == ".bmp") && Image.IsAlphaPixelFormat(img.PixelFormat))
+            {
+                // these formats have no alpha; put transparent areas (freeform captures) on white instead of black
+                using (var opaque = new Bitmap(img.Width, img.Height, PixelFormat.Format24bppRgb))
+                {
+                    opaque.SetResolution(img.HorizontalResolution, img.VerticalResolution);
+                    using (var g = Graphics.FromImage(opaque))
+                    {
+                        g.Clear(Color.White);
+                        g.DrawImage(img, new Rectangle(0, 0, img.Width, img.Height));
+                    }
+                    Save(opaque, path);
+                }
+                return;
+            }
             using (var ms = new MemoryStream())
             {
                 if (ext == ".jpg" || ext == ".jpeg")

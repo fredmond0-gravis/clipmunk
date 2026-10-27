@@ -2,7 +2,9 @@
 
 A fast screenshot and annotation tool for Windows, in the spirit of Snagit and Shottr.
 
-- **Print Screen** freezes the screen. **Drag** to select an area or **click** a window. A pixel magnifier shows the exact pixel and its color, and the **arrow keys** nudge the cursor 1 px (Shift: 10 px).
+- **Print Screen** or **Win+Shift+S** freezes the screen. **Drag** to select an area or **click** a window. A pixel magnifier shows the exact pixel and its color, and the **arrow keys** nudge the cursor 1 px (Shift: 10 px).
+- A toolbar at the top (or keys **1–4**) switches between **Rectangle**, **Freeform** (draw around anything; outside the shape stays transparent), **Window** and **Full screen**, like the Snipping Tool. Clipmunk remembers the last mode.
+- Win+Shift+S replaces the Snipping Tool. To give it back to Windows, untick **Win+Shift+S opens Clipmunk** in the tray menu.
 - When you release, the capture is **copied to the clipboard** and **saved to your library**.
 - The editor opens with tools you can change later: arrow, line, rectangle, ellipse, pen, highlighter, text, numbered steps, stickers, pixelate/redact, and crop. Every object stays selectable, movable, resizable and recolorable.
 - Edits **save automatically** and update the clipboard as you go.

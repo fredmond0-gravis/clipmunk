@@ -22,7 +22,7 @@ namespace Clipmunk
         private readonly RegisteredWaitHandle activateWait;
         private readonly EventWaitHandle captureEvent;
         private readonly RegisteredWaitHandle captureWait;
-        private ToolStripMenuItem startupItem, openEditorItem;
+        private ToolStripMenuItem startupItem, openEditorItem, winShiftSItem;
         private LibraryForm library;
         private bool capturing;
 
@@ -36,7 +36,7 @@ namespace Clipmunk
             tray = new NotifyIcon
             {
                 Icon = Art.AppIcon(SystemInformation.SmallIconSize.Width),
-                Text = "Clipmunk — Print Screen to capture",
+                Text = "Clipmunk — Print Screen or Win+Shift+S to capture",
                 ContextMenuStrip = BuildMenu(),
                 Visible = true
             };
@@ -48,7 +48,7 @@ namespace Clipmunk
 
             activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
             activateWait = ThreadPool.RegisterWaitForSingleObject(activateEvent,
-                (st, timedOut) => invoker.BeginInvoke((Action)(() => Balloon("Clipmunk is already running", "Press Print Screen to capture, or click the tray icon for your library."))),
+                (st, timedOut) => invoker.BeginInvoke((Action)(() => Balloon("Clipmunk is already running", "Press Print Screen or Win+Shift+S to capture, or click the tray icon for your library."))),
                 null, -1, false);
             captureEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Program.CaptureEventName);
             captureWait = ThreadPool.RegisterWaitForSingleObject(captureEvent,
@@ -61,11 +61,11 @@ namespace Clipmunk
             string folder = Library.Folder; // creates the default on first run
             Settings.Current.Save();
             if (!hooked)
-                Balloon("Clipmunk is running", "Couldn't take over the Print Screen key — use the tray icon to capture.");
+                Balloon("Clipmunk is running", "Couldn't take over the Print Screen key or Win+Shift+S — use the tray icon to capture.");
             else if (first)
-                Balloon("Clipmunk is ready 🐿", "Press Print Screen to capture. Screenshots save to " + folder + (GoogleDrive.Contains(folder) ? " (synced by Google Drive)." : "."));
+                Balloon("Clipmunk is ready 🐿", "Press Print Screen or Win+Shift+S to capture. Screenshots save to " + folder + (GoogleDrive.Contains(folder) ? " (synced by Google Drive)." : "."));
             else
-                Balloon("Clipmunk is running", "Press Print Screen to capture.");
+                Balloon("Clipmunk is running", "Press Print Screen or Win+Shift+S to capture.");
         }
 
         private ContextMenuStrip BuildMenu()
@@ -73,7 +73,7 @@ namespace Clipmunk
             var m = new ContextMenuStrip();
             Theme.Apply(m);
             m.ImageScalingSize = new Size(Theme.S(18), Theme.S(18));
-            var cap = new ToolStripMenuItem("Capture\tPrint Screen", Art.Glyph("capture", Theme.S(18)), (s, e) => StartCapture(null));
+            var cap = new ToolStripMenuItem("Capture\tPrtSc / Win+Shift+S",Art.Glyph("capture", Theme.S(18)), (s, e) => StartCapture(null));
             cap.Font = new Font(cap.Font, FontStyle.Bold);
             m.Items.Add(cap);
             m.Items.Add("Capture in 3 seconds", null, (s, e) => StartDelayed(3000));
@@ -84,6 +84,9 @@ namespace Clipmunk
             openEditorItem = new ToolStripMenuItem("Open editor after capture") { CheckOnClick = true, Checked = Settings.Current.OpenEditorAfterCapture };
             openEditorItem.CheckedChanged += (s, e) => { Settings.Current.OpenEditorAfterCapture = openEditorItem.Checked; Settings.Current.Save(); };
             m.Items.Add(openEditorItem);
+            winShiftSItem = new ToolStripMenuItem("Win+Shift+S opens Clipmunk") { CheckOnClick = true, Checked = Settings.Current.WinShiftS };
+            winShiftSItem.CheckedChanged += (s, e) => { Settings.Current.WinShiftS = winShiftSItem.Checked; Settings.Current.Save(); };
+            m.Items.Add(winShiftSItem);
             startupItem = new ToolStripMenuItem("Start with Windows") { CheckOnClick = true, Checked = IsStartupEnabled() };
             startupItem.CheckedChanged += (s, e) => SetStartup(startupItem.Checked);
             m.Items.Add(startupItem);
@@ -273,8 +276,8 @@ namespace Clipmunk
         {
             MessageBox.Show(
                 "Clipmunk " + Program.Version + "\n\n" +
-                "Print Screen — capture (drag an area or click a window)\n" +
-                "In the capture: arrow keys nudge 1px, Shift+arrows 10px, Enter grabs, Esc cancels\n\n" +
+                "Print Screen or Win+Shift+S — capture (drag an area or click a window)\n" +
+                "In the capture: 1–4 switch rectangle / freeform / window / full screen, arrow keys nudge 1px, Shift+arrows 10px, Enter grabs, Esc cancels\n\n" +
                 "Every capture is copied to the clipboard and saved to:\n" + Library.Folder,
                 "About Clipmunk", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }

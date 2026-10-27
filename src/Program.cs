@@ -7,14 +7,14 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Clipmunk")]
 [assembly: AssemblyDescription("Clipmunk screenshot & annotation tool")]
 [assembly: AssemblyProduct("Clipmunk")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyFileVersion("1.2.1.0")]
 
 namespace Clipmunk
 {
     internal static class Program
     {
-        public const string Version = "1.2";
+        public const string Version = "1.2.1";
         public const string CaptureEventName = @"Local\Clipmunk.Capture";
 
         /// <summary>Set CLIPMUNK_DEBUG=1 to log to %APPDATA%\Clipmunk\debug.log.</summary>

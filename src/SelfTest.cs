@@ -31,6 +31,7 @@ namespace Clipmunk
             Step("art", () => Art.WritePreviewSheet(Path.Combine(dir, "art.png")), ref failures);
             Step("overlay", () => RenderOverlay(Path.Combine(dir, "overlay.png")), ref failures);
             Step("freeform", () => Freeform(Path.Combine(dir, "freeform.png")), ref failures);
+            Step("empty step", () => EmptyStep(), ref failures);
             Step("roundtrip", () => RoundTrip(), ref failures);
             Step("editor", () => RenderEditor(Path.Combine(dir, "editor.png"), Path.Combine(dir, "flat.png")), ref failures);
             Step("library", () => RenderLibrary(Path.Combine(dir, "library.png")), ref failures);
@@ -119,6 +120,14 @@ namespace Clipmunk
                     cut.Save(path, ImageFormat.Png);
                 }
             }
+        }
+
+        /// <summary>A step is 0×0 right after the click that creates it; drawing it must not throw.</summary>
+        private static void EmptyStep()
+        {
+            using (var bmp = new Bitmap(100, 100))
+            using (var g = Graphics.FromImage(bmp))
+                new StepShape { Number = 1, L = 50, T = 50, R = 50, B = 50 }.Draw(g, bmp);
         }
 
         private static List<Shape> SampleShapes(int w, int h)

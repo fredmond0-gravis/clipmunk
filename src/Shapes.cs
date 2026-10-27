@@ -549,6 +549,7 @@ namespace Clipmunk
         {
             var r = Rect;
             float d = Math.Min(r.Width, r.Height);
+            if (d < 2f) return; // just created (0×0 until the drag ends); GDI+ can't lay out a 0 px number
             var c = new RectangleF(r.X + (r.Width - d) / 2, r.Y + (r.Height - d) / 2, d, d);
             using (var sh = new SolidBrush(Color.FromArgb(70, 0, 0, 0))) g.FillEllipse(sh, c.X + d * 0.02f, c.Y + d * 0.06f, d, d);
             using (var b = new SolidBrush(Stroke)) g.FillEllipse(b, c);

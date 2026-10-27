@@ -9,7 +9,7 @@ using System.Windows.Forms;
 
 namespace Clipmunk
 {
-    internal enum Tool { Select, Pen, Highlighter, Arrow, Line, Rectangle, Ellipse, Text, Step, Sticker, Blur, Crop }
+    internal enum Tool { Select, Pen, Highlighter, Arrow, Line, Rectangle, Ellipse, Text, Step, Sticker, Blur, Crop, Rotate }
     internal enum StyleField { Stroke, Fill, Width, FontSize, Bold, Sticker }
 
     internal sealed class Style
@@ -62,7 +62,7 @@ namespace Clipmunk
             public List<Shape> Shapes;
         }
 
-        private enum DragMode { None, Create, Move, Handle, Crop, Pan }
+        private enum DragMode { None, Create, Move, Handle, Crop, Pan, Rotate, Ruler, RulerRotate }
 
         public readonly Style Style;
         private readonly CanvasHost host;
@@ -84,6 +84,13 @@ namespace Clipmunk
         private bool dragChanged;
         private Rectangle cropRect;
         private Point panMouse, panScroll;
+        private float rotateStart, rotateAngle;
+
+        // ruler: an on-screen straightedge in image coordinates; never part of the saved image
+        private bool rulerVisible;
+        private PointF rulerCenter;
+        private float rulerAngle, rulerLength, rulerGrab;
+        private int rulerSnapSide;
 
         private Snapshot pending;
         private readonly Stack<Snapshot> undo = new Stack<Snapshot>();
@@ -149,6 +156,23 @@ namespace Clipmunk
                 Cursor = CursorForTool();
                 var h = ToolChanged;
                 if (h != null) h(this, EventArgs.Empty);
+                Invalidate();
+            }
+        }
+
+        public bool RulerVisible
+        {
+            get { return rulerVisible; }
+            set
+            {
+                if (rulerVisible == value) return;
+                rulerVisible = value;
+                if (value)
+                {
+                    rulerCenter = VisibleImageCenter();
+                    rulerAngle = 0;
+                    rulerLength = Math.Max(Math.Max(baseImage.Width, baseImage.Height), 200 / zoom);
+                }
                 Invalidate();
             }
         }
@@ -388,6 +412,7 @@ namespace Clipmunk
                 creating = null;
                 drag = DragMode.None;
                 pending = null;
+                rotateAngle = 0;
                 Capture = false;
                 Invalidate();
             }
@@ -462,6 +487,203 @@ namespace Clipmunk
             host.CenterCanvas();
             Tool = Tool.Select;
             Invalidate();
+        }
+
+        private PointF ImageCenter { get { return new PointF(baseImage.Width / 2f, baseImage.Height / 2f); } }
+
+        /// <summary>
+        /// Rotates the screenshot clockwise around its centre. Right angles are lossless; any other angle grows
+        /// the canvas and leaves transparent corners. Lines and pen strokes turn with the image; boxes, text,
+        /// steps and stickers stay upright and move along (boxes swap width and height on a quarter turn).
+        /// </summary>
+        public void Rotate(float degrees)
+        {
+            float a = degrees % 360;
+            if (a < 0) a += 360;
+            int quarter = (int)Math.Round(a / 90) % 4;
+            bool right = Math.Abs(a - Math.Round(a / 90) * 90) < 0.01;
+            if (right && quarter == 0) return;
+            CommitTextEdit();
+            BeginChange();
+            int w = baseImage.Width, h = baseImage.Height;
+            Bitmap nb;
+            if (right)
+            {
+                a = quarter * 90;
+                nb = (Bitmap)baseImage.Clone();
+                nb.RotateFlip(quarter == 1 ? RotateFlipType.Rotate90FlipNone : quarter == 2 ? RotateFlipType.Rotate180FlipNone : RotateFlipType.Rotate270FlipNone);
+            }
+            else
+            {
+                double r = a * Math.PI / 180, ac = Math.Abs(Math.Cos(r)), asn = Math.Abs(Math.Sin(r));
+                int nw = (int)Math.Ceiling(w * ac + h * asn - 0.01), nh = (int)Math.Ceiling(w * asn + h * ac - 0.01);
+                nb = new Bitmap(nw, nh, PixelFormat.Format32bppArgb);
+                using (var g = Graphics.FromImage(nb))
+                {
+                    g.Clear(Color.Transparent);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.TranslateTransform(nw / 2f, nh / 2f);
+                    g.RotateTransform(a);
+                    g.TranslateTransform(-w / 2f, -h / 2f);
+                    g.DrawImage(baseImage, new Rectangle(0, 0, w, h));
+                }
+            }
+            nb.SetResolution(96, 96);
+
+            double rad = a * Math.PI / 180;
+            float cos = (float)Math.Cos(rad), sin = (float)Math.Sin(rad);
+            float ocx = w / 2f, ocy = h / 2f, ncx = nb.Width / 2f, ncy = nb.Height / 2f;
+            if (!right)
+            {
+                // drop the margin left by earlier rotations, so turning again doesn't keep growing the canvas
+                var keep = OpaqueBounds(nb);
+                if (!keep.IsEmpty && keep.Size != nb.Size)
+                {
+                    var trimmed = nb.Clone(keep, nb.PixelFormat);
+                    trimmed.SetResolution(96, 96);
+                    nb.Dispose();
+                    nb = trimmed;
+                    ncx -= keep.X;
+                    ncy -= keep.Y;
+                }
+            }
+            Func<PointF, PointF> map = p => new PointF(ncx + (p.X - ocx) * cos - (p.Y - ocy) * sin, ncy + (p.X - ocx) * sin + (p.Y - ocy) * cos);
+            foreach (var s in shapes) RotateShape(s, map, right && quarter % 2 == 1);
+
+            baseImage = nb;
+            CommitChange();
+            Select(null);
+            UpdateCanvasSize();
+            host.PerformLayout();
+            host.CenterCanvas();
+            Invalidate();
+        }
+
+        /// <summary>Bounds of the pixels that aren't (almost) fully transparent; 32bpp ARGB only.</summary>
+        private static Rectangle OpaqueBounds(Bitmap bmp)
+        {
+            int w = bmp.Width, h = bmp.Height;
+            var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            var px = new int[data.Stride / 4 * h];
+            System.Runtime.InteropServices.Marshal.Copy(data.Scan0, px, 0, px.Length);
+            bmp.UnlockBits(data);
+            int stride = data.Stride / 4, l = w, t = h, r = -1, b = -1;
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * stride;
+                for (int x = 0; x < w; x++)
+                {
+                    if ((px[row + x] >> 24 & 0xFF) < 8) continue;
+                    if (x < l) l = x;
+                    if (x > r) r = x;
+                    if (y < t) t = y;
+                    if (y > b) b = y;
+                }
+            }
+            return r < 0 ? Rectangle.Empty : Rectangle.FromLTRB(l, t, r + 1, b + 1);
+        }
+
+        private static void RotateShape(Shape s, Func<PointF, PointF> map, bool quarterTurn)
+        {
+            var line = s as LineShape;
+            if (line != null)
+            {
+                line.P1 = map(line.P1);
+                line.P2 = map(line.P2);
+                return;
+            }
+            var pen = s as PenShape;
+            if (pen != null)
+            {
+                for (int i = 0; i < pen.Points.Count; i++) pen.Points[i] = map(pen.Points[i]);
+                return;
+            }
+            var box = s as BoxShape;
+            if (box != null)
+            {
+                var r = box.Rect;
+                var c = map(new PointF(r.X + r.Width / 2, r.Y + r.Height / 2));
+                float bw = r.Width, bh = r.Height;
+                if (quarterTurn && !box.LockAspect)
+                {
+                    bw = r.Height;
+                    bh = r.Width;
+                }
+                box.SetRect(new RectangleF(c.X - bw / 2, c.Y - bh / 2, bw, bh));
+                return;
+            }
+            var b = s.Bounds;
+            var c0 = new PointF(b.X + b.Width / 2, b.Y + b.Height / 2);
+            var c1 = map(c0);
+            s.Offset(c1.X - c0.X, c1.Y - c0.Y);
+        }
+
+        private static float AngleDeg(PointF c, PointF p) { return (float)(Math.Atan2(p.Y - c.Y, p.X - c.X) * 180 / Math.PI); }
+
+        private static float Wrap180(float a)
+        {
+            a %= 360;
+            if (a > 180) a -= 360;
+            if (a <= -180) a += 360;
+            return a;
+        }
+
+        private static float Snap45(float a) { return (float)Math.Round(a / 45) * 45; }
+
+        // ------------------------------------------------------------------ ruler geometry (image coordinates)
+
+        /// <summary>Ruler thickness in image units; constant on screen.</summary>
+        private float RulerThickness { get { return 50f * ui / zoom; } }
+
+        private PointF RulerAxis
+        {
+            get
+            {
+                double a = rulerAngle * Math.PI / 180;
+                return new PointF((float)Math.Cos(a), (float)Math.Sin(a));
+            }
+        }
+
+        /// <summary>Position of p along and across the ruler, measured from its centre.</summary>
+        private void RulerLocal(PointF p, out float along, out float across)
+        {
+            var u = RulerAxis;
+            float dx = p.X - rulerCenter.X, dy = p.Y - rulerCenter.Y;
+            along = dx * u.X + dy * u.Y;
+            across = -dx * u.Y + dy * u.X;
+        }
+
+        /// <summary>0 = not on the ruler, 1 = body (move), 2 = a rotate knob.</summary>
+        private int RulerHit(PointF p)
+        {
+            if (!rulerVisible) return 0;
+            float along, across;
+            RulerLocal(p, out along, out across);
+            float t = RulerThickness, half = rulerLength / 2, kr = t * 0.24f;
+            if (Math.Abs(Math.Abs(along) - (half - t / 2)) <= kr && Math.Abs(across) <= kr) return 2;
+            return Math.Abs(along) <= half && Math.Abs(across) <= t / 2 ? 1 : 0;
+        }
+
+        /// <summary>The side (+1 / -1) whose long edge p lies just outside of, or 0.</summary>
+        private int RulerEdgeAt(PointF p)
+        {
+            if (!rulerVisible) return 0;
+            float along, across;
+            RulerLocal(p, out along, out across);
+            float snap = 16f * ui / zoom;
+            if (Math.Abs(along) > rulerLength / 2 + snap) return 0;
+            float d = Math.Abs(across) - RulerThickness / 2;
+            return d >= 0 && d <= snap ? Math.Sign(across) : 0;
+        }
+
+        private PointF OnRulerEdge(PointF p, int side)
+        {
+            var u = RulerAxis;
+            float along, across;
+            RulerLocal(p, out along, out across);
+            float off = side * RulerThickness / 2;
+            return new PointF(rulerCenter.X + u.X * along - u.Y * off, rulerCenter.Y + u.Y * along + u.X * off);
         }
 
         /// <summary>Screenshot with all annotations burned in.</summary>
@@ -543,6 +765,11 @@ namespace Clipmunk
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
+            if (drag == DragMode.Rotate && rotateAngle != 0)
+            {
+                DrawRotatePreview(g);
+                return;
+            }
             int w = baseImage.Width, h = baseImage.Height;
             var img = new RectangleF(pad, pad, w * zoom, h * zoom);
 
@@ -555,6 +782,7 @@ namespace Clipmunk
             }
             g.SmoothingMode = SmoothingMode.None;
 
+            if (Image.IsAlphaPixelFormat(baseImage.PixelFormat)) FillChecker(g, img);
             DrawBase(g, e.ClipRectangle, img);
 
             var state = g.Save();
@@ -568,6 +796,105 @@ namespace Clipmunk
 
             if (drag == DragMode.Crop && cropRect.Width > 0 && cropRect.Height > 0) DrawCrop(g, img);
             if (selected != null && editing == null && drag != DragMode.Create) DrawSelection(g);
+            if (rulerVisible) DrawRuler(g);
+
+            var measured = drag == DragMode.Create ? creating as LineShape : drag == DragMode.Handle ? selected as LineShape : null;
+            if (measured != null)
+            {
+                float dx = measured.P2.X - measured.P1.X, dy = measured.P2.Y - measured.P1.Y;
+                var mid = ToScreen(new PointF((measured.P1.X + measured.P2.X) / 2, (measured.P1.Y + measured.P2.Y) / 2));
+                DrawLabel(g, Math.Round(Math.Sqrt(dx * dx + dy * dy)) + " px", new PointF(mid.X, mid.Y - 22 * ui));
+            }
+        }
+
+        private void DrawLabel(Graphics g, string text, PointF center)
+        {
+            using (var f = Theme.UiFont(9f))
+            {
+                var sz = TextRenderer.MeasureText(text, f);
+                var lr = new RectangleF(center.X - sz.Width / 2f - 7 * ui, center.Y - sz.Height / 2f - 2 * ui, sz.Width + 14 * ui, sz.Height + 4 * ui);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                Theme.FillRounded(g, Color.FromArgb(230, 20, 21, 24), lr, lr.Height / 2);
+                TextRenderer.DrawText(g, text, f, Rectangle.Round(lr), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+        }
+
+        private void DrawRotatePreview(Graphics g)
+        {
+            int w = baseImage.Width, h = baseImage.Height;
+            var state = g.Save();
+            g.TranslateTransform(pad + w * zoom / 2, pad + h * zoom / 2);
+            g.RotateTransform(rotateAngle);
+            g.ScaleTransform(zoom, zoom);
+            g.TranslateTransform(-w / 2f, -h / 2f);
+            if (Image.IsAlphaPixelFormat(baseImage.PixelFormat)) FillChecker(g, new RectangleF(0, 0, w, h));
+            g.InterpolationMode = InterpolationMode.Bilinear;
+            g.DrawImage(baseImage, new Rectangle(0, 0, w, h));
+            PrepareShapeGraphics(g);
+            foreach (var s in shapes) s.Draw(g, baseImage);
+            g.Restore(state);
+            var top = new PointF(host.ClientSize.Width / 2f - Left, Math.Max(0, -Top) + 22 * ui);
+            DrawLabel(g, Math.Round(rotateAngle, 1).ToString(System.Globalization.CultureInfo.CurrentCulture) + "°   ·   Shift snaps to 45°", top);
+        }
+
+        /// <summary>Checkerboard behind transparent areas (e.g. the corners of a rotated or freeform capture).</summary>
+        private static void FillChecker(Graphics g, RectangleF r)
+        {
+            using (var b = new HatchBrush(HatchStyle.LargeCheckerBoard, Color.FromArgb(205, 205, 210), Color.FromArgb(245, 245, 247)))
+                g.FillRectangle(b, r);
+        }
+
+        private void DrawRuler(Graphics g)
+        {
+            float t = RulerThickness * zoom, len = rulerLength * zoom;
+            var c = ToScreen(rulerCenter);
+            var state = g.Save();
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.TranslateTransform(c.X, c.Y);
+            g.RotateTransform(rulerAngle);
+            var body = new RectangleF(-len / 2, -t / 2, len, t);
+            using (var path = Theme.RoundedRect(body, 4 * ui))
+            {
+                using (var b = new SolidBrush(Color.FromArgb(210, 246, 247, 249))) g.FillPath(b, path);
+                using (var p = new Pen(Color.FromArgb(140, 0, 0, 0), 1f)) g.DrawPath(p, path);
+            }
+
+            // ticks every 1/2/5/10… image pixels, whichever is at least 6 screen px apart; numbers every 10 ticks
+            float[] steps = { 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 };
+            float minor = steps[steps.Length - 1];
+            foreach (var s in steps)
+                if (s * zoom >= 6) { minor = s; break; }
+            int n = (int)(rulerLength / minor);
+            using (var tick = new Pen(Color.FromArgb(210, 40, 42, 48), 1f))
+            using (var font = new Font("Segoe UI", 10f * ui, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (var ink = new SolidBrush(Color.FromArgb(40, 42, 48)))
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near })
+            {
+                for (int i = 0; i <= n; i++)
+                {
+                    float x = -len / 2 + i * minor * zoom;
+                    float tl = i % 10 == 0 ? t * 0.3f : i % 5 == 0 ? t * 0.2f : t * 0.12f;
+                    g.DrawLine(tick, x, -t / 2, x, -t / 2 + tl);
+                    g.DrawLine(tick, x, t / 2, x, t / 2 - tl);
+                    if (i % 10 == 0 && i > 0 && Math.Abs(x) < len / 2 - t) // keep numbers clear of the knobs
+                        g.DrawString(((int)(i * minor)).ToString(), font, ink, x, -t / 2 + t * 0.3f + 1, sf);
+                }
+
+                int deg = ((int)Math.Round(-rulerAngle) % 180 + 180) % 180;
+                sf.LineAlignment = StringAlignment.Center;
+                g.DrawString(deg + "°", font, ink, 0, t * 0.18f, sf);
+
+                float kr = t * 0.24f;
+                foreach (float kx in new[] { -(len / 2 - t / 2), len / 2 - t / 2 })
+                {
+                    var kb = new RectangleF(kx - kr, -kr, 2 * kr, 2 * kr);
+                    using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, kb);
+                    using (var p = new Pen(Theme.Accent, 2f)) g.DrawEllipse(p, kb);
+                    g.DrawString("↻", font, ink, kx, 0, sf);
+                }
+            }
+            g.Restore(state);
         }
 
         private void DrawBase(Graphics g, Rectangle clip, RectangleF img)
@@ -678,7 +1005,7 @@ namespace Clipmunk
 
         private bool ClickMovesExisting
         {
-            get { return tool != Tool.Pen && tool != Tool.Highlighter && tool != Tool.Crop; }
+            get { return tool != Tool.Pen && tool != Tool.Highlighter && tool != Tool.Crop && tool != Tool.Rotate; }
         }
 
         private Cursor CursorForTool()
@@ -687,6 +1014,7 @@ namespace Clipmunk
             {
                 case Tool.Select: return Cursors.Default;
                 case Tool.Text: return Cursors.IBeam;
+                case Tool.Rotate: return Cursors.Hand;
                 default: return Cursors.Cross;
             }
         }
@@ -721,6 +1049,26 @@ namespace Clipmunk
             if (editing != null)
             {
                 CommitTextEdit();
+                return;
+            }
+
+            int rh = RulerHit(p);
+            if (rh != 0)
+            {
+                drag = rh == 2 ? DragMode.RulerRotate : DragMode.Ruler;
+                lastPoint = p;
+                rulerGrab = AngleDeg(rulerCenter, p) - rulerAngle;
+                Capture = true;
+                return;
+            }
+
+            if (tool == Tool.Rotate)
+            {
+                Select(null);
+                drag = DragMode.Rotate;
+                rotateStart = AngleDeg(ImageCenter, p);
+                rotateAngle = 0;
+                Capture = true;
                 return;
             }
 
@@ -768,6 +1116,10 @@ namespace Clipmunk
                 Select(null);
                 return;
             }
+
+            // lines started just outside a ruler edge are laid against that edge
+            rulerSnapSide = tool == Tool.Line || tool == Tool.Arrow ? RulerEdgeAt(p) : 0;
+            if (rulerSnapSide != 0) p = OnRulerEdge(p, rulerSnapSide);
 
             dragStart = p;
             Capture = true;
@@ -832,6 +1184,12 @@ namespace Clipmunk
             {
                 case DragMode.None:
                 {
+                    int rh = RulerHit(p);
+                    if (rh != 0)
+                    {
+                        Cursor = rh == 2 ? Cursors.Hand : Cursors.SizeAll;
+                        return;
+                    }
                     int hIndex = HitHandle(e.Location);
                     if (hIndex >= 0) Cursor = selected.HandleCursor(hIndex);
                     else if ((tool == Tool.Select || ClickMovesExisting) && HitShape(p) != null) Cursor = Cursors.SizeAll;
@@ -844,6 +1202,22 @@ namespace Clipmunk
                     host.AutoScrollPosition = new Point(panScroll.X - (c.X - panMouse.X), panScroll.Y - (c.Y - panMouse.Y));
                     host.CenterCanvas();
                     return;
+                }
+                case DragMode.Rotate:
+                {
+                    float a = Wrap180(AngleDeg(ImageCenter, p) - rotateStart);
+                    rotateAngle = shift ? Snap45(a) : a;
+                    break;
+                }
+                case DragMode.Ruler:
+                    rulerCenter = new PointF(rulerCenter.X + p.X - lastPoint.X, rulerCenter.Y + p.Y - lastPoint.Y);
+                    lastPoint = p;
+                    break;
+                case DragMode.RulerRotate:
+                {
+                    float a = Wrap180(AngleDeg(rulerCenter, p) - rulerGrab);
+                    rulerAngle = shift ? Snap45(a) : a;
+                    break;
                 }
                 case DragMode.Move:
                 {
@@ -882,7 +1256,7 @@ namespace Clipmunk
                     }
                     else if (ls != null)
                     {
-                        ls.P2 = shift ? Shape.SnapAngle(ls.P1, p) : p;
+                        ls.P2 = rulerSnapSide != 0 ? OnRulerEdge(p, rulerSnapSide) : shift ? Shape.SnapAngle(ls.P1, p) : p;
                     }
                     else if (bs != null)
                     {
@@ -909,6 +1283,13 @@ namespace Clipmunk
                 case DragMode.Pan:
                     Cursor = CursorForTool();
                     break;
+                case DragMode.Rotate:
+                {
+                    float a = rotateAngle;
+                    rotateAngle = 0;
+                    if (Math.Abs(a) >= 0.1f) Rotate(a);
+                    break;
+                }
                 case DragMode.Move:
                 case DragMode.Handle:
                     if (selected != null) selected.Normalize();
@@ -959,6 +1340,13 @@ namespace Clipmunk
             {
                 host.AutoScrollPosition = new Point(-host.AutoScrollPosition.X - e.Delta, -host.AutoScrollPosition.Y);
                 host.CenterCanvas();
+                if (he != null) he.Handled = true;
+                return;
+            }
+            if (RulerHit(ToImage(e.Location)) != 0)
+            {
+                rulerAngle = Wrap180(rulerAngle + (e.Delta > 0 ? -1 : 1));
+                Invalidate();
                 if (he != null) he.Handled = true;
                 return;
             }

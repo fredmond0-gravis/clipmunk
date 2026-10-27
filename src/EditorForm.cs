@@ -30,7 +30,7 @@ namespace Clipmunk
         private readonly StatusStrip status;
         private readonly ToolStripStatusLabel locationLabel, messageLabel, sizeLabel;
         private readonly ToolStripDropDownButton outlineButton, fillButton, widthButton, fontButton, stickerButton, zoomButton;
-        private readonly ToolStripButton boldButton, undoButton, redoButton;
+        private readonly ToolStripButton boldButton, undoButton, redoButton, rulerButton;
         private readonly ToolStripMenuItem autoCopyItem;
         private readonly List<ToolStripButton> quickSwatches = new List<ToolStripButton>();
         private readonly Dictionary<Tool, ToolStripButton> toolButtons = new Dictionary<Tool, ToolStripButton>();
@@ -105,6 +105,9 @@ namespace Clipmunk
             AddTool(Tool.Sticker, "sticker", "Sticker (K)");
             AddTool(Tool.Blur, "blur", "Pixelate / redact (B)");
             AddTool(Tool.Crop, "crop", "Crop (C)");
+            AddTool(Tool.Rotate, "rotate", "Rotate image (O) — drag to turn, Shift snaps to 45°");
+            rulerButton = GlyphButton("ruler", "Ruler (Ctrl+R) — drag to move, ↻ or wheel to turn; lines drawn along an edge snap to it", (s, e) => ToggleRuler());
+            toolBar.Items.Add(rulerButton);
             toolBar.Items.Add(new ToolStripSeparator());
             undoButton = GlyphButton("undo", "Undo (Ctrl+Z)", (s, e) => canvas.Undo());
             redoButton = GlyphButton("redo", "Redo (Ctrl+Y)", (s, e) => canvas.Redo());
@@ -255,7 +258,7 @@ namespace Clipmunk
                 Settings.Current.LastTool = canvas.Tool;
             };
 
-            canvas.Tool = settings.LastTool == Tool.Crop ? Tool.Arrow : settings.LastTool;
+            canvas.Tool = settings.LastTool == Tool.Crop || settings.LastTool == Tool.Rotate ? Tool.Arrow : settings.LastTool;
             foreach (var kv in toolButtons) kv.Value.Checked = kv.Key == canvas.Tool;
             RefreshStyleUi();
             UpdateChrome();
@@ -283,6 +286,13 @@ namespace Clipmunk
         private void SetTool(Tool t)
         {
             canvas.Tool = t;
+            canvas.Focus();
+        }
+
+        private void ToggleRuler()
+        {
+            canvas.RulerVisible = !canvas.RulerVisible;
+            rulerButton.Checked = canvas.RulerVisible;
             canvas.Focus();
         }
 
@@ -491,6 +501,7 @@ namespace Clipmunk
                 case Keys.Control | Keys.S: SaveNow(); ShowMessage("Saved to library"); return true;
                 case Keys.Control | Keys.Shift | Keys.S: ExportAs(); return true;
                 case Keys.Control | Keys.D: canvas.DuplicateSelected(); return true;
+                case Keys.Control | Keys.R: ToggleRuler(); return true;
                 case Keys.Control | Keys.N: NewCapture(); return true;
                 case Keys.Control | Keys.L: TrayContext.ShowLibrary(); return true;
                 case Keys.Control | Keys.W: Close(); return true;
@@ -525,6 +536,7 @@ namespace Clipmunk
                 case Keys.K: SetTool(Tool.Sticker); return true;
                 case Keys.B: SetTool(Tool.Blur); return true;
                 case Keys.C: SetTool(Tool.Crop); return true;
+                case Keys.O: SetTool(Tool.Rotate); return true;
             }
             return base.ProcessCmdKey(ref msg, keyData);
         }

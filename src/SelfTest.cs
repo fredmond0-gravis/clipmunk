@@ -32,6 +32,7 @@ namespace Clipmunk
             Step("overlay", () => RenderOverlay(Path.Combine(dir, "overlay.png")), ref failures);
             Step("freeform", () => Freeform(Path.Combine(dir, "freeform.png")), ref failures);
             Step("empty step", () => EmptyStep(), ref failures);
+            Step("rotate", () => RotateAndRuler(Path.Combine(dir, "ruler.png")), ref failures);
             Step("roundtrip", () => RoundTrip(), ref failures);
             Step("editor", () => RenderEditor(Path.Combine(dir, "editor.png"), Path.Combine(dir, "flat.png")), ref failures);
             Step("library", () => RenderLibrary(Path.Combine(dir, "library.png")), ref failures);
@@ -128,6 +129,76 @@ namespace Clipmunk
             using (var bmp = new Bitmap(100, 100))
             using (var g = Graphics.FromImage(bmp))
                 new StepShape { Number = 1, L = 50, T = 50, R = 50, B = 50 }.Draw(g, bmp);
+        }
+
+        private static bool Near(PointF p, float x, float y) { return Math.Abs(p.X - x) < 0.01f && Math.Abs(p.Y - y) < 0.01f; }
+
+        private static void RotateAndRuler(string rulerPath)
+        {
+            using (var img = FakeDesktop(200, 100))
+            using (var host = new CanvasHost())
+            {
+                var bmp = img.Clone(new Rectangle(0, 0, 200, 100), PixelFormat.Format24bppRgb);
+                var shapes = new List<Shape>
+                {
+                    new LineShape { Stroke = Color.Red, Width = 4, P1 = new PointF(10, 10), P2 = new PointF(110, 10) },
+                    new RectShape { Stroke = Color.Blue, Width = 3, L = 20, T = 40, R = 80, B = 60 }
+                };
+                var style = new Style { Stroke = Color.Red, Fill = Color.Transparent, Width = 4, FontSize = 24 };
+                var canvas = new EditorCanvas(host, bmp, shapes, style);
+                host.Controls.Add(canvas);
+
+                canvas.Rotate(90);
+                var b = canvas.BaseImage;
+                Check(b.Width == 100 && b.Height == 200, "quarter turn size " + b.Width + "x" + b.Height);
+                Check(b.GetPixel(99, 0).ToArgb() == bmp.GetPixel(0, 0).ToArgb(), "quarter turn is clockwise");
+                var line = (LineShape)canvas.Shapes[0];
+                Check(Near(line.P1, 90, 10) && Near(line.P2, 90, 110), "line turns with the image " + line.P1 + " " + line.P2);
+                var rect = ((RectShape)canvas.Shapes[1]).Rect;
+                Check(Math.Abs(rect.Width - 20) < 0.01f && Math.Abs(rect.Height - 60) < 0.01f && Math.Abs(rect.X - 40) < 0.01f, "box swaps sides " + rect);
+
+                canvas.Undo();
+                Check(canvas.BaseImage.Width == 200 && Near(((LineShape)canvas.Shapes[0]).P1, 10, 10), "undo restores the rotation");
+
+                canvas.Rotate(45);
+                b = canvas.BaseImage;
+                Check(b.PixelFormat == PixelFormat.Format32bppArgb && b.Width >= 210 && b.Width <= 213 && b.Height == b.Width, "free rotation canvas " + b.Width + "x" + b.Height);
+                Check(b.GetPixel(5, 5).A == 0 && b.GetPixel(b.Width / 2, b.Height / 2).A == 255, "free rotation corners are transparent");
+
+                canvas.Rotate(-45);
+                b = canvas.BaseImage;
+                Check(Math.Abs(b.Width - 200) <= 3 && Math.Abs(b.Height - 100) <= 3, "turning back doesn't grow the canvas " + b.Width + "x" + b.Height);
+
+                canvas.Undo();
+                canvas.Undo();
+                canvas.Rotate(10);
+                canvas.Rotate(10);
+                var twice = canvas.BaseImage.Size;
+                canvas.Undo();
+                canvas.Undo();
+                canvas.Rotate(20);
+                var once = canvas.BaseImage.Size;
+                Check(Math.Abs(twice.Width - once.Width) <= 3 && Math.Abs(twice.Height - once.Height) <= 3, "10°+10° is as big as 20° " + twice + " vs " + once);
+
+                canvas.Dispose();
+            }
+
+            using (var img = FakeDesktop(900, 560))
+            using (var host = new CanvasHost { ClientSize = new Size(1000, 660) })
+            {
+                var bmp = img.Clone(new Rectangle(0, 0, 900, 560), PixelFormat.Format24bppRgb);
+                var style = new Style { Stroke = Color.Red, Fill = Color.Transparent, Width = 4, FontSize = 24 };
+                var canvas = new EditorCanvas(host, bmp, SampleShapes(900, 560), style);
+                host.Controls.Add(canvas);
+                canvas.Rotate(15);
+                canvas.RulerVisible = true;
+                using (var shot = new Bitmap(canvas.Width, canvas.Height))
+                {
+                    canvas.DrawToBitmap(shot, new Rectangle(0, 0, canvas.Width, canvas.Height));
+                    shot.Save(rulerPath, ImageFormat.Png);
+                }
+                canvas.Dispose();
+            }
         }
 
         private static List<Shape> SampleShapes(int w, int h)

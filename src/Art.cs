@@ -277,6 +277,23 @@ namespace Clipmunk
                         g.DrawLines(ink, new[] { P(5, 1.5f), P(5, 15), P(18.5f, 15) });
                         g.DrawLines(ink, new[] { P(1.5f, 5), P(15, 5), P(15, 18.5f) });
                         break;
+                    case "rotate":
+                        g.DrawArc(ink2, 3.5f, 3.5f, 13, 13, -60, 290);
+                        ArrowHead(g, inkBrush, P(11.5f, 1.8f), P(16.6f, 5.4f), 5.5f, 3.6f);
+                        break;
+                    case "ruler":
+                    {
+                        var st = g.Save();
+                        g.TranslateTransform(10, 10);
+                        g.RotateTransform(-45);
+                        using (var p = new Pen(inkColor, 1.5f) { LineJoin = LineJoin.Round })
+                        {
+                            g.DrawRectangle(p, -9, -3.5f, 18, 7);
+                            for (int i = -6; i <= 6; i += 3) g.DrawLine(p, i, -3.5f, i, i % 6 == 0 ? 0.5f : -0.8f);
+                        }
+                        g.Restore(st);
+                        break;
+                    }
                     case "capture":
                     {
                         float a = 2, b = 18, l = 5;
@@ -479,12 +496,12 @@ namespace Clipmunk
 
         public static void WritePreviewSheet(string path)
         {
-            string[] glyphs = { "select", "pen", "highlighter", "arrow", "line", "rect", "ellipse", "text", "step", "sticker", "blur", "crop", "capture", "undo", "redo", "copy", "save", "library", "folder", "bold", "search", "drive", "claude" };
-            using (var bmp = new Bitmap(1200, 560))
+            string[] glyphs = { "select", "pen", "highlighter", "arrow", "line", "rect", "ellipse", "text", "step", "sticker", "blur", "crop", "rotate", "ruler", "capture", "undo", "redo", "copy", "save", "library", "folder", "bold", "search", "drive", "claude" };
+            using (var bmp = new Bitmap(1300, 560))
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Theme.Chrome);
-                g.FillRectangle(Brushes.White, 0, 400, 1200, 160);
+                g.FillRectangle(Brushes.White, 0, 400, 1300, 160);
                 int x = 10;
                 foreach (int s in new[] { 16, 20, 24, 32, 48, 64, 128, 256 })
                 {

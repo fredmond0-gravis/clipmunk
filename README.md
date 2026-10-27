@@ -45,9 +45,14 @@ Clipmunk needs only what ships with Windows 10/11 (.NET Framework 4.8). There is
 | K | Sticker | Ctrl+L | Library |
 | B | Pixelate / redact | Ctrl+Shift+S | Export as… |
 | C | Crop | Shift while drawing | Square / 45° snap |
+| O | Rotate image (drag; Shift = 45° steps) | Ctrl+R | Ruler |
 | | | Ctrl+Shift+C | Ask Claude (new chat with this screenshot) |
 
 **Ask Claude** (next to Copy) puts the screenshot on the clipboard and opens a new chat in the Claude desktop app, or claude.ai in your browser if the app isn't installed. It then pastes the image once Claude is in front. If the paste doesn't land (e.g. Claude was slow to start), press Ctrl+V. The ▾ menu switches between app and browser and turns auto-paste off.
+
+**Rotate (O)**: drag anywhere on the image to turn it, and hold Shift to snap to 45° steps. Quarter turns are lossless. Any other angle enlarges the canvas and leaves the corners transparent. Lines and pen strokes turn with the image. Boxes, text, steps and stickers stay upright and move along.
+
+**Ruler (Ctrl+R)**: an on-screen ruler marked in image pixels. It never appears in the saved image. Drag it to move it. Drag a ↻ knob or use the mouse wheel over it to turn it, and hold Shift to snap to 45°. A line or arrow you start just outside one of its long edges is laid against that edge. While you draw or resize a line, its length in pixels is shown.
 
 Palette dots: **left-click** sets the color, **right-click** sets the fill.
 

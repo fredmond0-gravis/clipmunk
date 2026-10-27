@@ -56,6 +56,7 @@ Copies older than 1.3 have no updater, so install 1.3 once by hand.
 | B | Pixelate / redact | Ctrl+Shift+S | Export as… |
 | C | Crop | Shift while drawing | Square / 45° snap |
 | O | Rotate image (drag; Shift = 45° steps) | Ctrl+R | Ruler |
+| Esc | Copy image & close editor | | |
 | | | Ctrl+Shift+C | Ask Claude (new chat with this screenshot) |
 
 **Ask Claude** (next to Copy) puts the screenshot on the clipboard and opens a new chat in the Claude desktop app, or claude.ai in your browser if the app isn't installed. It then pastes the image once Claude is in front. If the paste doesn't land (e.g. Claude was slow to start), press Ctrl+V. The ▾ menu switches between app and browser and turns auto-paste off.

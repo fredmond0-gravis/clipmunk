@@ -9,6 +9,7 @@ copy /y dist\Clipmunk.exe build\package\ >nul
 copy /y "packaging\Install Clipmunk.cmd" build\package\ >nul
 copy /y "packaging\Uninstall Clipmunk.cmd" build\package\ >nul
 copy /y README.md build\package\ >nul
+copy /y LICENSE build\package\LICENSE.txt >nul
 if exist dist\Clipmunk.zip del dist\Clipmunk.zip
 powershell -NoProfile -Command "Compress-Archive -Path 'build\package\*' -DestinationPath 'dist\Clipmunk.zip'" || exit /b 1
 echo Packaged dist\Clipmunk.zip

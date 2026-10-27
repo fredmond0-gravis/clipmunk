@@ -19,7 +19,7 @@ A **Shared drive** folder works too if your team wants a common library.
 
 ## Install (for colleagues)
 
-1. Download `Clipmunk.zip` from the latest [release](../../releases/latest) and unzip it anywhere.
+1. Download `Clipmunk.zip` from the latest [release](https://github.com/fredmond0-gravis/clipmunk/releases/latest) and unzip it anywhere.
 2. Double-click **Install Clipmunk.cmd**. It installs for your user only (no admin needed), adds a Start-menu shortcut, and starts Clipmunk with Windows.
 3. Press **Print Screen**.
 
@@ -92,3 +92,7 @@ The workflow builds it and creates a GitHub Release with `Clipmunk.zip` attached
 | `src/LibraryForm.cs` | Library grid (thumbnails, search, drag-out, delete) |
 | `src/Storage.cs` | Settings, Google Drive detection, documents, clipboard |
 | `src/Theme.cs`, `src/Art.cs`, `src/Stickers.cs` | Dark theme, vector icons, stickers, app icon |
+
+## License
+
+MIT. See [LICENSE](LICENSE).

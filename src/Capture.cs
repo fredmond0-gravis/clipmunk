@@ -164,6 +164,8 @@ namespace Clipmunk
     internal sealed class CaptureOverlay : Form
     {
         private static readonly string[] ModeLabels = { "Rectangle", "Freeform", "Window", "Full screen" };
+        private const int RepeatSeg = 4, LockSeg = 5; // toolbar actions after the modes
+        private static List<Point> lastPath; // last freeform shape in screen coordinates, so Repeat can cut it again
         private CaptureMode mode;
         private readonly List<Point> path = new List<Point>();
         private readonly Bitmap shot;
@@ -269,8 +271,65 @@ namespace Clipmunk
             get
             {
                 if (mode == CaptureMode.Freeform) return Rectangle.Empty;
-                return dragging && moved ? selection : hover;
+                if (dragging && moved) return selection;
+                return Locked ? LockedRect() : hover;
             }
+        }
+
+        /// <summary>Lock size is on: a frame of the locked size hangs at the cursor by its top-left corner.</summary>
+        private bool Locked
+        {
+            get { return Settings.Current.LockSize && mode == CaptureMode.Rectangle && !Settings.Current.LockedSize.IsEmpty; }
+        }
+
+        private Rectangle LockedRect()
+        {
+            var r = new Rectangle(cursor, Settings.Current.LockedSize);
+            var mon = MonitorAt(cursor);
+            if (r.Right > mon.Right) r.X = mon.Right - r.Width;
+            if (r.Bottom > mon.Bottom) r.Y = mon.Bottom - r.Height;
+            if (r.X < mon.X) r.X = mon.X;
+            if (r.Y < mon.Y) r.Y = mon.Y;
+            r.Intersect(new Rectangle(Point.Empty, vs.Size));
+            return r;
+        }
+
+        private void ToggleLock()
+        {
+            var st = Settings.Current;
+            if (Locked) st.LockSize = false;
+            else
+            {
+                if (st.LastCapture.IsEmpty) return;
+                st.LockSize = true;
+                st.LockedSize = st.LastCapture.Size; // lock the size of the last capture
+            }
+            SetMode(CaptureMode.Rectangle); // saves the settings and repaints
+        }
+
+        /// <summary>Grabs the same area as last time again (the freeform shape too, while Clipmunk keeps running).</summary>
+        private void Repeat()
+        {
+            var last = Settings.Current.LastCapture;
+            if (last.IsEmpty) return;
+            if (lastPath != null)
+            {
+                var cut = CutFreeform(lastPath.ConvertAll(p => new Point(p.X - vs.X, p.Y - vs.Y)));
+                if (cut == null) return;
+                Result = cut;
+                DialogResult = DialogResult.OK;
+                return;
+            }
+            var r = new Rectangle(last.X - vs.X, last.Y - vs.Y, last.Width, last.Height);
+            r.Intersect(new Rectangle(Point.Empty, vs.Size));
+            if (!r.IsEmpty) Finish(r);
+        }
+
+        private void Remember(Rectangle r, List<Point> pts)
+        {
+            Settings.Current.LastCapture = new Rectangle(r.X + vs.X, r.Y + vs.Y, r.Width, r.Height);
+            Settings.Current.Save();
+            lastPath = pts == null ? null : pts.ConvertAll(p => new Point(p.X + vs.X, p.Y + vs.Y));
         }
 
         private void SetMode(CaptureMode m)
@@ -316,7 +375,9 @@ namespace Clipmunk
                 int seg = ToolbarHit(e.Location);
                 if (seg >= 0)
                 {
-                    SetMode((CaptureMode)seg);
+                    if (seg == RepeatSeg) Repeat();
+                    else if (seg == LockSeg) ToggleLock();
+                    else SetMode((CaptureMode)seg);
                     return;
                 }
                 dragging = true;
@@ -368,6 +429,7 @@ namespace Clipmunk
             if (mode == CaptureMode.Freeform)
             {
                 var cut = moved ? CutFreeform(path) : null;
+                if (cut != null) Remember(PathBounds(), path);
                 path.Clear();
                 if (cut == null)
                 {
@@ -379,7 +441,8 @@ namespace Clipmunk
                 return;
             }
             if (mode == CaptureMode.Window && hover.IsEmpty) return; // clicked the desktop: keep waiting
-            Finish(moved ? selection : hover);
+            if (moved && Locked) Settings.Current.LockedSize = selection.Size; // dragged while locked: new locked size
+            Finish(moved ? selection : ActiveRect);
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -397,6 +460,8 @@ namespace Clipmunk
                 case Keys.D2: case Keys.NumPad2: SetMode(CaptureMode.Freeform); break;
                 case Keys.D3: case Keys.NumPad3: SetMode(CaptureMode.Window); break;
                 case Keys.D4: case Keys.NumPad4: SetMode(CaptureMode.FullScreen); break;
+                case Keys.R: Repeat(); break;
+                case Keys.L: ToggleLock(); break;
                 case Keys.Left: Nudge(-step, 0); break;
                 case Keys.Right: Nudge(step, 0); break;
                 case Keys.Up: Nudge(0, -step); break;
@@ -419,6 +484,7 @@ namespace Clipmunk
             }
             Result = shot.Clone(r, PixelFormat.Format24bppRgb);
             Result.SetResolution(96, 96);
+            Remember(r, null);
             DialogResult = DialogResult.OK;
         }
 
@@ -449,6 +515,20 @@ namespace Clipmunk
         }
 
         public Bitmap FreeformForTest(List<Point> pts) { return CutFreeform(pts); }
+
+        /// <summary>Self-test: Repeat with the given last freeform shape (screen coordinates, or null).</summary>
+        public Bitmap RepeatForTest(List<Point> screenPath)
+        {
+            lastPath = screenPath;
+            Repeat();
+            return Result;
+        }
+
+        public Rectangle LockedRectForTest(Point at)
+        {
+            cursor = at;
+            return ActiveRect;
+        }
 
         // ------------------------------------------------------------------ painting
 
@@ -608,7 +688,9 @@ namespace Clipmunk
                     case CaptureMode.Freeform: return "Draw around the area   ·   1–4 switch mode   ·   Esc to cancel";
                     case CaptureMode.Window: return "Click a window   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
                     case CaptureMode.FullScreen: return "Click a screen   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
-                    default: return "Drag to select   ·   Click a window   ·   Arrows nudge 1px   ·   Enter to grab   ·   1–4 switch mode   ·   Esc to cancel";
+                    default:
+                        if (Locked) return "Click to place the frame   ·   Drag for a new size   ·   Arrows nudge 1px   ·   L unlock   ·   R repeat last   ·   Esc to cancel";
+                        return "Drag to select   ·   Click a window   ·   Arrows nudge 1px   ·   Enter to grab   ·   1–4 switch mode   ·   R repeat last   ·   L lock size   ·   Esc to cancel";
                 }
             }
         }
@@ -630,11 +712,12 @@ namespace Clipmunk
             float s = UiScale;
             var mon = MonitorAt(cursor);
             int pad = (int)(4 * s), h = (int)(32 * s);
-            segs = new Rectangle[ModeLabels.Length];
+            segs = new Rectangle[LockSeg + 1];
             int w = pad;
-            for (int i = 0; i < ModeLabels.Length; i++)
+            for (int i = 0; i < segs.Length; i++)
             {
-                int sw = TextRenderer.MeasureText(ModeLabels[i], smallFont).Width + (int)(28 * s);
+                if (i == RepeatSeg) w += (int)(12 * s); // gap between the modes and the actions
+                int sw = TextRenderer.MeasureText(SegLabel(i), smallFont).Width + (int)(28 * s);
                 segs[i] = new Rectangle(w, pad, sw, h);
                 w += sw;
             }
@@ -642,6 +725,13 @@ namespace Clipmunk
             int x = mon.X + (mon.Width - w) / 2, y = mon.Y + (int)(20 * s);
             for (int i = 0; i < segs.Length; i++) segs[i].Offset(x, y);
             return new Rectangle(x, y, w, h + 2 * pad);
+        }
+
+        private string SegLabel(int i)
+        {
+            if (i == RepeatSeg) return "Repeat";
+            if (i == LockSeg) return Locked ? "Locked " + Settings.Current.LockedSize.Width + " × " + Settings.Current.LockedSize.Height : "Lock size";
+            return ModeLabels[i];
         }
 
         private int ToolbarHit(Point p)
@@ -660,9 +750,10 @@ namespace Clipmunk
             Pill(g, tr, Color.FromArgb(240, 20, 21, 24));
             for (int i = 0; i < segs.Length; i++)
             {
-                bool on = i == (int)mode;
+                bool on = i == RepeatSeg ? false : i == LockSeg ? Locked : i == (int)mode;
+                bool off = (i == RepeatSeg || i == LockSeg) && Settings.Current.LastCapture.IsEmpty; // nothing to repeat yet
                 if (on) Pill(g, segs[i], Theme.Accent);
-                TextRenderer.DrawText(g, ModeLabels[i], smallFont, segs[i], on ? Color.White : Color.FromArgb(200, 205, 212),
+                TextRenderer.DrawText(g, SegLabel(i), smallFont, segs[i], on ? Color.White : off ? Color.FromArgb(105, 110, 118) : Color.FromArgb(200, 205, 212),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
         }
@@ -712,6 +803,14 @@ namespace Clipmunk
             var mon = MonitorAt(cursor);
             int off = (int)(24 * s);
             int x = cursor.X + off, y = cursor.Y + off;
+            if (Locked && !(dragging && moved))
+            {
+                // the locked frame hangs below-right of the cursor: keep the magnifier out of it
+                x = cursor.X - off - size;
+                y = cursor.Y - off - size - gap - infoH;
+                if (x < mon.Left) x = cursor.X + off;
+                if (y < mon.Top) y = cursor.Y + off;
+            }
             if (x + size > mon.Right) x = cursor.X - off - size;
             if (y + size + gap + infoH > mon.Bottom) y = cursor.Y - off - size - gap - infoH;
             box = new Rectangle(x, y, size, size);

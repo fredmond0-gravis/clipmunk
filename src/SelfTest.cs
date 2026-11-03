@@ -31,6 +31,7 @@ namespace Clipmunk
             Step("art", () => Art.WritePreviewSheet(Path.Combine(dir, "art.png")), ref failures);
             Step("overlay", () => RenderOverlay(Path.Combine(dir, "overlay.png")), ref failures);
             Step("freeform", () => Freeform(Path.Combine(dir, "freeform.png")), ref failures);
+            Step("repeat & lock", () => RepeatAndLock(Path.Combine(dir, "lock.png")), ref failures);
             Step("empty step", () => EmptyStep(), ref failures);
             Step("rotate", () => RotateAndRuler(Path.Combine(dir, "ruler.png")), ref failures);
             Step("roundtrip", () => RoundTrip(), ref failures);
@@ -121,6 +122,51 @@ namespace Clipmunk
                     Check(cut.GetPixel(200, 250).ToArgb() == shot.GetPixel(300, 350).ToArgb(), "inside matches the screen");
                     cut.Save(path, ImageFormat.Png);
                 }
+            }
+        }
+
+        /// <summary>Repeat grabs the last area again (rectangle or freeform); Lock size hangs a frame at the cursor.</summary>
+        private static void RepeatAndLock(string lockPath)
+        {
+            var vs = Screen.PrimaryScreen.Bounds;
+            var st = Settings.Current;
+            try
+            {
+                using (var shot = FakeDesktop(vs.Width, vs.Height))
+                {
+                    st.LastCapture = new Rectangle(vs.X + 120, vs.Y + 80, 300, 200);
+                    using (var ov = new CaptureOverlay(shot, vs, new List<Rectangle>()))
+                    using (var rep = ov.RepeatForTest(null))
+                    {
+                        Check(rep != null && rep.Width == 300 && rep.Height == 200, "repeat size");
+                        Check(rep.GetPixel(10, 10).ToArgb() == shot.GetPixel(130, 90).ToArgb(), "repeat grabs the same pixels");
+                    }
+
+                    var tri = new List<Point> { new Point(vs.X + 200, vs.Y + 100), new Point(vs.X + 500, vs.Y + 400), new Point(vs.X + 100, vs.Y + 400) };
+                    using (var ov = new CaptureOverlay(shot, vs, new List<Rectangle>()))
+                    using (var cut = ov.RepeatForTest(tri))
+                    {
+                        Check(cut != null && cut.Width == 401 && cut.Height == 301, "repeat freeform size");
+                        Check(cut.PixelFormat == PixelFormat.Format32bppArgb && cut.GetPixel(2, 2).A == 0, "repeat freeform stays transparent outside");
+                    }
+
+                    st.LockSize = true;
+                    st.LockedSize = new Size(300, 200);
+                    using (var ov = new CaptureOverlay(shot, vs, new List<Rectangle>()))
+                    using (var target = new Bitmap(vs.Width, vs.Height))
+                    {
+                        Check(ov.LockedRectForTest(new Point(50, 60)) == new Rectangle(50, 60, 300, 200), "locked frame hangs at the cursor");
+                        Check(ov.LockedRectForTest(new Point(vs.Width - 10, vs.Height - 10)) == new Rectangle(vs.Width - 300, vs.Height - 200, 300, 200),
+                            "locked frame stays on the screen");
+                        ov.RenderPreview(target, new Point(vs.Width / 3, vs.Height / 3), Rectangle.Empty);
+                        target.Save(lockPath, ImageFormat.Png);
+                    }
+                }
+            }
+            finally
+            {
+                st.LockSize = false;
+                st.LastCapture = Rectangle.Empty;
             }
         }
 

@@ -26,6 +26,9 @@ namespace Clipmunk
         public bool AutoUpdate = true;
         public bool WinShiftS = true;
         public CaptureMode CaptureMode = CaptureMode.Rectangle;
+        public Rectangle LastCapture;      // screen coordinates of the last grab (Repeat), Empty = none yet
+        public bool LockSize;
+        public Size LockedSize;
 
         private static Settings current;
         public static Settings Current
@@ -80,6 +83,9 @@ namespace Clipmunk
                             case "CaptureMode": { CaptureMode cm; if (Enum.TryParse(v, out cm)) s.CaptureMode = cm; break; }
                             case "Sticker": { StickerKind sk; if (Enum.TryParse(v, out sk)) s.Sticker = sk; break; }
                             case "LastTool": { Tool t; if (Enum.TryParse(v, out t)) s.LastTool = t; break; }
+                            case "LastCapture": { var n = Array.ConvertAll(v.Split(','), int.Parse); s.LastCapture = new Rectangle(n[0], n[1], n[2], n[3]); break; }
+                            case "LockSize": s.LockSize = v == "1"; break;
+                            case "LockedSize": { var n = Array.ConvertAll(v.Split(','), int.Parse); s.LockedSize = new Size(n[0], n[1]); break; }
                         }
                     }
                     catch (Exception)
@@ -118,7 +124,10 @@ namespace Clipmunk
                     "ClaudeAutoPaste=" + (ClaudeAutoPaste ? "1" : "0"),
                     "AutoUpdate=" + (AutoUpdate ? "1" : "0"),
                     "WinShiftS=" + (WinShiftS ? "1" : "0"),
-                    "CaptureMode=" + CaptureMode
+                    "CaptureMode=" + CaptureMode,
+                    "LastCapture=" + LastCapture.X + "," + LastCapture.Y + "," + LastCapture.Width + "," + LastCapture.Height,
+                    "LockSize=" + (LockSize ? "1" : "0"),
+                    "LockedSize=" + LockedSize.Width + "," + LockedSize.Height
                 });
             }
             catch (Exception)
